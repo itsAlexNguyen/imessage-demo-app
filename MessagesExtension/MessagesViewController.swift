@@ -8,14 +8,58 @@
 
 import UIKit
 import Messages
+import SafariServices
 
-class MessagesViewController: MSMessagesAppViewController {
+class MessagesViewController: MSMessagesAppViewController, UITableViewDelegate, UITableViewDataSource {
+    
+    @IBOutlet var tableView: UITableView!
+    
+    var posts : [Post]?
+    var savedConversation: MSConversation?
+    var safariViewController: SFSafariViewController?
     
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view.
+        tableView.estimatedRowHeight = 100.0
+        tableView.rowHeight = UITableViewAutomaticDimension
+        RedditAPI.getTopStories { (results) in
+            self.posts = results
+            self.tableView.reloadData()
+        }
     }
     
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return posts?.count ?? 0
+    }
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let tvc = tableView.dequeueReusableCell(withIdentifier: "post") as! PostTableViewCell
+        if let post = posts?[indexPath.row] {
+            tvc.titleLbl.text = post.title ?? "No Title"
+            if let score = post.score {
+                tvc.scoreLbl.text = "score: \(score)"
+            }
+            tvc.urlLbl.text = post.domain ?? "No URL"
+        }
+        return tvc
+    }
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard let post = posts?[indexPath.row] else { return }
+        let message = MSMessage()
+        let layout = MSMessageTemplateLayout()
+        layout.caption = post.title
+        if let score = post.score {
+            layout.subcaption = "\(score)"
+        }
+        layout.trailingSubcaption = post.domain
+        if let postUrl = post.url, let url = URL(string: postUrl) {
+            message.url = url
+        }
+        message.layout = layout
+        savedConversation?.insert(message, completionHandler: { (error) in
+
+        })
+    }
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
         // Dispose of any resources that can be recreated.
@@ -28,6 +72,12 @@ class MessagesViewController: MSMessagesAppViewController {
         // This will happen when the extension is about to present UI.
         
         // Use this method to configure the extension and restore previously stored state.
+        savedConversation = conversation
+        safariViewController?.dismiss(animated: true, completion: nil)
+        if let url = conversation.selectedMessage?.url {
+            safariViewController = SFSafariViewController(url: url)
+            present(safariViewController!, animated: true, completion: nil)
+        }
     }
     
     override func didResignActive(with conversation: MSConversation) {
@@ -61,6 +111,11 @@ class MessagesViewController: MSMessagesAppViewController {
         // Called before the extension transitions to a new presentation style.
     
         // Use this method to prepare for the change in presentation style.
+        guard presentationStyle == .expanded else { return }
+        if let message = activeConversation?.selectedMessage, let url = message.url {
+            safariViewController = SFSafariViewController(url: url)
+            present(safariViewController!, animated: true, completion: nil)
+        }
     }
     
     override func didTransition(to presentationStyle: MSMessagesAppPresentationStyle) {
